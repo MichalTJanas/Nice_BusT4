@@ -1,8 +1,8 @@
 /*
-Отправка UART Break на Wemos D1 mini
+Wysyłanie UART Break na Wemos D1 mini
 Arduino Core 3.0.2
 
-Логический анализатор помог отточить форму сигнала
+Analizator stanów logicznych pomógł dopracować kształt sygnału
 */
 
 unsigned long timing; 
@@ -13,7 +13,7 @@ unsigned long timing;
 #define baud_break 9200
 #define LIN_BREAK_BAUDRATE(BAUD) ((BAUD * 9) / 13)
 
-// переменные для uart
+// zmienne dla uart
     int _uart_nr;
     uart_t* _uart = nullptr;
     
@@ -31,9 +31,9 @@ unsigned long timing;
 void send_break() {
   
 /* Serial on/off Break
- // Работает плохо. 
- // 1. В момент включения uart виден короткий лишний импульс
- // 2. Последний символ посылки низкого бодрэйта не успевает отправится до переключения, уходит в линию на высоком бодрэйте
+ // Działa źle.
+ // 1. W momencie włączenia uart widoczny jest krótki, zbędny impuls
+ // 2. Ostatni znak pakietu o niskim baudrate nie zdąży zostać wysłany przed przełączeniem i trafia na linię z wysokim baudrate
 
   //Serial.end(); // HardwareSerial::begin consist end();
   //Serial.flush();
@@ -53,9 +53,9 @@ void send_break() {
 //uart.h
 
 /* UART on/off Break
-//Работает плохо. 
-// 1. В момент включения uart виден короткий лишний импульс
-// 2. Последний символ посылки низкого бодрэйта не успевает отправится до переключения, уходит в линию на высоком бодрэйте
+//Działa źle.
+// 1. W momencie włączenia uart widoczny jest krótki, zbędny impuls
+// 2. Ostatni znak pakietu o niskim baudrate nie zdąży zostać wysłany przed przełączeniem i trafia na linię z wysokim baudrate
 
 
  uart_flush(_uart);
@@ -75,19 +75,19 @@ void send_break() {
 
 
 // UART set_baudrate Break
-// Работает хорошо с wemos d1 mini и Arduino Core 3.0.2
+// Działa dobrze z wemos d1 mini i Arduino Core 3.0.2
 
-// Отправка break + посылка
+// Wysyłanie break + pakiet
 
- uart_flush(_uart);                                               // очищаем uart
- uart_set_baudrate(_uart, baud_break);                            // занижаем бодрэйт
+ uart_flush(_uart);                                               // czyścimy uart
+ uart_set_baudrate(_uart, baud_break);                            // obniżamy baudrate
  //uart_write(_uart, (char *)&dummy, 1);        
- uart_write(_uart, (char *)break_tx_buf, sizeof(break_tx_buf));   // отправляем ноль на низкой скорости, длиинный ноль
- uart_wait_tx_empty(_uart);                                       // ждём, пока отправка завершится. Здесь в библиотеке uart.h (esp8266 core 3.0.2) ошибка, ожидания недостаточно при дальнейшем uart_set_baudrate().
- delayMicroseconds(90);                                          // добавляем ожидания, иначе скорость переключится раньше отправки. С задержкой на d1-mini я получил идеальный сигнал, break = 520us? отправлял 0x00
- uart_set_baudrate(_uart, baud_work);                             // возвращаем рабочий бодрэйт
- uart_write(_uart, (char *)master_tx_buf, sizeof(master_tx_buf)); // отправляем основную посылку
- uart_wait_tx_empty(_uart);                                       // ждем завершения отправки
+ uart_write(_uart, (char *)break_tx_buf, sizeof(break_tx_buf));   // wysyłamy zero z niską prędkością, długie zero
+ uart_wait_tx_empty(_uart);                                       // czekamy, aż wysyłanie się zakończy. Tu w bibliotece uart.h (esp8266 core 3.0.2) jest błąd, oczekiwanie jest niewystarczające przy późniejszym uart_set_baudrate().
+ delayMicroseconds(90);                                          // dodajemy oczekiwanie, inaczej prędkość przełączy się przed zakończeniem wysyłania. Z opóźnieniem na d1-mini uzyskałem idealny sygnał, break = 520us? wysyłałem 0x00
+ uart_set_baudrate(_uart, baud_work);                             // przywracamy roboczy baudrate
+ uart_write(_uart, (char *)master_tx_buf, sizeof(master_tx_buf)); // wysyłamy główny pakiet
+ uart_wait_tx_empty(_uart);                                       // czekamy na zakończenie wysyłania
 
   
 }

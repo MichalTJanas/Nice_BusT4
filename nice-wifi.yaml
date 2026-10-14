@@ -1,4 +1,4 @@
-# Отправляет пакеты через uart в шину Nice BUS T4
+# Wysyła pakiety przez uart na magistralę Nice BUS T4
 
 esphome:
   name: "nice-wifi"
@@ -21,10 +21,10 @@ logger:
   
 # Enable Home Assistant API
 api:
-  reboot_timeout: 0s # иначе перезагружается при отключении от hassio 
+  reboot_timeout: 0s # inaczej restartuje się po rozłączeniu z hassio 
 
   services:
-# для отправки hex команд на привод
+# do wysyłania komend hex do napędu
   - service: raw_command
     variables:
         raw_cmd: string
@@ -45,19 +45,19 @@ api:
       lambda: |-
         nice_cover -> NiceBusT4::send_inf_cmd(to_addr, whose, command, type_command, next_data, data_on, data_command);
 
-# распознавание длины створки
+# rozpoznawanie długości skrzydła
   - service: gate_length_recognition
     then:
       lambda: |-
          nice_cover -> NiceBusT4::set_mcu("0b","01");
 
-# распознавание устройств BlueBus
+# rozpoznawanie urządzeń BlueBus
   - service: devices_recognition
     then:
       lambda: |-
          nice_cover -> NiceBusT4::set_mcu("0a","01");         
 
-# усилие при закрытии
+# siła przy zamykaniu
   - service: closing_force
     variables:
       force: string
@@ -65,7 +65,7 @@ api:
       lambda: |-
          nice_cover -> NiceBusT4::set_mcu("4b", force);         
 
-# усилие при открытии
+# siła przy otwieraniu
   - service: opening_force
     variables:
       force: string
@@ -99,27 +99,27 @@ web_server:
 #  js_url: ""
 #  version: 2  
 
-# Кнопки для отправки команд
+# Przyciski do wysyłania komend
 button:
   - platform: template
-    name: Пошагово
+    name: Krok po kroku
     id: sbs
     on_press:
       lambda: |-
            nice_cover -> NiceBusT4::send_cmd(bus_t4::SBS);
 
   - platform: template
-    name: Статус входов
+    name: Stan wejść
     id: in_stat
     on_press:
       lambda: |-
            nice_cover -> NiceBusT4::send_raw_cmd("55.0D.00.03.00.66.08.06.6B.04.D0.99.00.00.4D.0D");
 
 #         nice_cover -> NiceBusT4::send_raw_cmd("55 0c 00 ff 00 66 01 05 9D 01 82 01 64 E6 0c");
-# 55.0E.00.03.00.81.08.07.8D.04.0B.A9.00.01.01.A6.0E поиск положений
+# 55.0E.00.03.00.81.08.07.8D.04.0B.A9.00.01.01.A6.0E wyszukiwanie położeń
 
   - platform: template
-    name: Частичное открытие 1
+    name: Częściowe otwarcie 1
     id: p_opn1
     on_press:
       lambda: |-
@@ -133,19 +133,19 @@ button:
 #         nice_cover -> NiceBusT4::send_cmd(bus_t4::P_OPN4);
 #         nice_cover -> NiceBusT4::send_cmd(bus_t4::P_OPN5);
 #         nice_cover -> NiceBusT4::send_cmd(bus_t4::P_OPN6);
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::UNLK_OPN);  # Разблокировать и открыть 
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::CLS_LOCK);  # Закрыть и блокировать
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::UNLCK_CLS); # Разблокировать и Закрыть
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::LOCK);      # Блокировать
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::UNLOCK);    # Разблокировать
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::HOST_SBS);  # Ведущий SBS
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::HOST_OPN);  # Ведущий открыть
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::HOST_CLS);  # Ведущий закрыть
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::SLAVE_SBS); # Ведомый SBS
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::SLAVE_OPN); # Ведомый открыть
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::SLAVE_CLS); # Ведомый закрыть
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::AUTO_ON);   # Автооткрывание активно
-#         nice_cover -> NiceBusT4::send_cmd(bus_t4::AUTO_OFF);  # Автооткрывание неактивно
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::UNLK_OPN);  # Odblokuj i otwórz 
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::CLS_LOCK);  # Zamknij i zablokuj
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::UNLCK_CLS); # Odblokuj i zamknij
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::LOCK);      # Zablokuj
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::UNLOCK);    # Odblokuj
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::HOST_SBS);  # Master SBS
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::HOST_OPN);  # Master otwórz
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::HOST_CLS);  # Master zamknij
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::SLAVE_SBS); # Slave SBS
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::SLAVE_OPN); # Slave otwórz
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::SLAVE_CLS); # Slave zamknij
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::AUTO_ON);   # Automatyczne otwieranie aktywne
+#         nice_cover -> NiceBusT4::send_cmd(bus_t4::AUTO_OFF);  # Automatyczne otwieranie nieaktywne
 
 cover:
 - platform: bus_t4
@@ -153,16 +153,16 @@ cover:
   device_class: gate
   id: nice_cover
   
-#  address: 0x0003            # адрес привода
-#  use_address: 0x0081        # адрес шлюза
+#  address: 0x0003            # adres napędu
+#  use_address: 0x0081        # adres bramki (gateway)
 
 
-# работаем с приёмником OXI
+# obsługa odbiornika OXI
 
-# отключаем автозакрытие ворот, если это нужно для погрузочно-разгрузочных работ
+# wyłączamy automatyczne zamykanie bramy, jeśli jest to potrzebne przy pracach załadunkowo-rozładunkowych
 switch:
   - platform: template
-    name: "Автозакрытие"
+    name: "Automatyczne zamykanie"
     id: autoclose
     restore_mode: DISABLED
 #    optimistic: true

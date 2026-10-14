@@ -1,23 +1,23 @@
 /*
   Nice BusT4
-  Обмен данными по UART на скорости 19200 8n1
-  Перед пакетом с данными отправляется break длительностью 519us (10 бит)
-  Содержимое пакета, которое удалось понять, описано в структуре packet_cmd_body_t
+  Wymiana danych przez UART z prędkością 19200 8n1
+  Przed pakietem z danymi wysyłany jest break o długości 519us (10 bitów)
+  Zawartość pakietu, którą udało się rozszyfrować, opisano w strukturze packet_cmd_body_t
 
  
 
-  Для Oview к адресу всегда прибавляется 80.
-  Адрес контроллера ворот без изменений.
+  Dla Oview do adresu zawsze dodawane jest 80.
+  Adres sterownika bramy bez zmian.
 
 
-Подключение
+Podłączenie
 
 BusT4                       ESP8266
 
-Стенка устройства        Rx Tx GND
+Ścianka urządzenia        Rx Tx GND
 9  7  5  3  1  
 10 8  6  4  2
-место для кабеля
+miejsce na kabel
             1 ---------- Rx
             2 ---------- GND
             4 ---------- Tx
@@ -26,16 +26,16 @@ BusT4                       ESP8266
 
 
 
-Из мануала nice_dmbm_integration_protocol.pdf
+Z instrukcji nice_dmbm_integration_protocol.pdf
 
-• ADR: это адрес сети NICE, где находятся устройства, которыми вы хотите управлять. Это может быть значение от 1 до 63 (от 1 до 3F).
-Это значение должно быть в HEX. Если адресатом является модуль интеграции на DIN-BAR, это значение равно 0 (adr = 0), если адресат
-является интеллектуальным двигателем, это значение равно 1 (adr = 1).
-• EPT: это адрес двигателя Nice, входящего в сетевой ADR. Это может быть значение от 1 до 127. Это значение должно быть в HEX.
-• CMD: это команда, которую вы хотите отправить по назначению (ADR, EPT).
-• PRF: команда установки профиля.
-• FNC: это функция, которую вы хотите отправить по назначению (ADR, EPT).
-• EVT: это событие, которое отправляется в пункт назначения (ADR, EPT).
+• ADR: to adres sieci NICE, w której znajdują się urządzenia, którymi chcesz sterować. Może to być wartość od 1 do 63 (od 1 do 3F).
+Ta wartość musi być w HEX. Jeśli adresatem jest moduł integracyjny na szynie DIN, wartość ta wynosi 0 (adr = 0), jeśli adresatem
+jest inteligentny silnik, wartość ta wynosi 1 (adr = 1).
+• EPT: to adres silnika Nice należącego do sieci ADR. Może to być wartość od 1 do 127. Ta wartość musi być w HEX.
+• CMD: to komenda, którą chcesz wysłać do adresata (ADR, EPT).
+• PRF: komenda ustawienia profilu.
+• FNC: to funkcja, którą chcesz wysłać do adresata (ADR, EPT).
+• EVT: to zdarzenie, które jest wysyłane do adresata (ADR, EPT).
 
 
 
@@ -46,37 +46,37 @@ BusT4                       ESP8266
 
 #include "esphome.h"
 #include "esphome/core/component.h"
-#include "esphome/core/automation.h"           // для добавления Action
+#include "esphome/core/automation.h"           // do dodawania Action
 #include "esphome/components/cover/cover.h"
 #include <HardwareSerial.h>
-#include "esphome/core/helpers.h"              // парсим строки встроенными инструментами
-#include <queue>                               // для работы с очередью
+#include "esphome/core/helpers.h"              // parsujemy ciągi wbudowanymi narzędziami
+#include <queue>                               // do obsługi kolejki
 
 
 
 namespace esphome {
 namespace bus_t4 {
 
-/* для короткого обращения к членам класса */
+/* dla krótkiego odwoływania się do członków klasy */
 using namespace esphome::cover;
 //using esp8266::timeoutTemplate::oneShotMs;
 
 
-static const int _UART_NO=UART0; /* номер uart */
-static const int TX_P = 1;         /* пин Tx */
-static const uint32_t BAUD_BREAK = 9200; /* бодрэйт для длинного импульса перед пакетом */
-static const uint32_t BAUD_WORK = 19200; /* рабочий бодрэйт */
-static const uint8_t START_CODE = 0x55; /*стартовый байт пакета */
+static const int _UART_NO=UART0; /* numer uart */
+static const int TX_P = 1;         /* pin Tx */
+static const uint32_t BAUD_BREAK = 9200; /* baudrate dla długiego impulsu przed pakietem */
+static const uint32_t BAUD_WORK = 19200; /* roboczy baudrate */
+static const uint8_t START_CODE = 0x55; /*bajt startowy pakietu */
 
-static const float CLOSED_POSITION_THRESHOLD = 0.007;  // Значение положения привода в процентах, ниже которого ворота считаются полностью закрытыми
-static const uint32_t POSITION_UPDATE_INTERVAL = 500;  // Интервал обновления текущего положения привода, мс
+static const float CLOSED_POSITION_THRESHOLD = 0.007;  // Wartość położenia napędu w procentach, poniżej której brama jest uznawana za całkowicie zamkniętą
+static const uint32_t POSITION_UPDATE_INTERVAL = 500;  // Interwał aktualizacji bieżącego położenia napędu, ms
 
-/* сетевые настройки esp
-  Ряд может принимать значения от 0 до 63, по-умолчанию 0
-  Адрес OVIEW начинается с 8
+/* ustawienia sieciowe esp
+  Seria może przyjmować wartości od 0 do 63, domyślnie 0
+  Adres OVIEW zaczyna się od 8
 
-  При объединении в сеть несколько приводов с OXI необходимо для разных приводов указать разные ряды.
-  В этом случае У OXI ряд должен быть как у привода, которым он управляет.
+  Przy łączeniu w sieć kilku napędów z OXI należy dla różnych napędów ustawić różne serie.
+  W takim przypadku OXI musi mieć taką samą serię jak napęd, którym steruje.
 */
 
 
@@ -84,149 +84,149 @@ static const uint32_t POSITION_UPDATE_INTERVAL = 500;  // Интервал об�
 
 
 
-/* Тип сообщения пакетов
-  пока нас интересует только CMD и INF
-  остальные глубоко не изучал и номера не проверял
-  6-й байт пакетов CMD и INF
+/* Typ komunikatu pakietów
+  na razie interesują nas tylko CMD i INF
+  pozostałych nie badałem dokładnie i numerów nie sprawdzałem
+  6. bajt pakietów CMD i INF
 */
 enum mes_type : uint8_t {
-  CMD = 0x01,  /* номер проверен, отправка команд автоматике */
-//  LSC = 0x02,  /* работа со списками сценариев */
-//  LST = 0x03,  /* работа со списками автоматик */
-//  POS = 0x04,  /* запрос и изменение позиции автоматики */
-//  GRP = 0x05,  /* отправка команд группе автоматик с указанием битовой маски мотора */
-//  SCN = 0x06,  /* работа со сценариями */
-//  GRC = 0x07,  /* отправка команд группе автоматик, созданных через Nice Screen Configuration Tool */
-  INF = 0x08,  /* возвращает или устанавливает информацию об устройстве */
-//  LGR = 0x09,  /* работа со списками групп */
-//  CGR = 0x0A,  /* работа с категориями групп, созданных через Nice Screen Configuration Tool */
+  CMD = 0x01,  /* numer sprawdzony, wysyłanie komend do automatyki */
+//  LSC = 0x02,  /* obsługa list scenariuszy */
+//  LST = 0x03,  /* obsługa list automatyk */
+//  POS = 0x04,  /* odczyt i zmiana pozycji automatyki */
+//  GRP = 0x05,  /* wysyłanie komend do grupy automatyk z podaniem maski bitowej silnika */
+//  SCN = 0x06,  /* obsługa scenariuszy */
+//  GRC = 0x07,  /* wysyłanie komend do grupy automatyk utworzonych w Nice Screen Configuration Tool */
+  INF = 0x08,  /* zwraca lub ustawia informacje o urządzeniu */
+//  LGR = 0x09,  /* obsługa list grup */
+//  CGR = 0x0A,  /* obsługa kategorii grup utworzonych w Nice Screen Configuration Tool */
 };
 
 
 
 
 /* 
-меню команды в иерархии oview
-9-й байт пакетов CMD
+menu komendy w hierarchii oview
+9. bajt pakietów CMD
 */
 enum cmd_mnu  : uint8_t {
   CONTROL = 0x01,
 };
 
 
-/* используется в ответах STA*/
+/* używane w odpowiedziach STA*/
 enum sub_run_cmd2 : uint8_t {
   STA_OPENING = 0x02,
   STA_CLOSING = 0x03,
        OPENED = 0x04,
        CLOSED = 0x05,
-      ENDTIME = 0x06,  // закончен маневр по таймауту
+      ENDTIME = 0x06,  // manewr zakończony po przekroczeniu czasu
       STOPPED = 0x08,
-  PART_OPENED = 0x10,  // частичное открывание
+  PART_OPENED = 0x10,  // częściowe otwarcie
 };
 
-/* Ошибки */
+/* Błędy */
 enum errors_byte  : uint8_t {
-  NOERR = 0x00, // Нет ошибок
-  FD = 0xFD,    // Нет команды для этого устройства
+  NOERR = 0x00, // Brak błędów
+  FD = 0xFD,    // Brak komendy dla tego urządzenia
   };
 
-// Типы моторов
+// Typy silników
 enum motor_type  : uint8_t {
   SLIDING = 0x01, 
   SECTIONAL = 0x02,
   SWING = 0x03,
   BARRIER = 0x04,
-  UPANDOVER = 0x05, // up-and-over подъемно-поворотные ворота
+  UPANDOVER = 0x05, // up-and-over brama uchylna
   };
 
-//  девятый байт
+//  dziewiąty bajt
 enum whose_pkt  : uint8_t {
-  FOR_ALL = 0x00,  /* пакет для/от всех */
-  FOR_CU = 0x04,  /* пакет для/от блока управления */
-  FOR_OXI = 0x0A,  /* пакет для/от приемника OXI */
+  FOR_ALL = 0x00,  /* pakiet dla/od wszystkich */
+  FOR_CU = 0x04,  /* pakiet dla/od centrali sterującej */
+  FOR_OXI = 0x0A,  /* pakiet dla/od odbiornika OXI */
   };
 	
-// десятый байт GET/SET пакетов EVT, для пакетов CMD встречалось только значение RUN
+// dziesiąty bajt GET/SET pakietów EVT, dla pakietów CMD występowała tylko wartość RUN
 enum command_pkt  : uint8_t {
-  TYPE_M         = 0x00,   /* Запрос типа привода */
-  INF_STATUS     = 0x01, //	Состояние ворот (Открыто/Закрыто/Остановлено)	
-  WHO	         = 0x04,  /* Кто в сети?     */
+  TYPE_M         = 0x00,   /* Zapytanie o typ napędu */
+  INF_STATUS     = 0x01, //	Stan bramy (Otwarta/Zamknięta/Zatrzymana)	
+  WHO	         = 0x04,  /* Kto jest w sieci? */
   MAC            = 0x07,    // mac address.
   MAN            = 0x08,   // manufacturer.
   PRD            = 0x09,   // product.
-  INF_SUPPORT    = 0x10, //  Доступные INF команды
+  INF_SUPPORT    = 0x10, //  Dostępne komendy INF
   HWR            = 0x0a,   // hardware version.
   FRM            = 0x0b,   // firmware version.
   DSC            = 0x0c,   // description.
-  CUR_POS        = 0x11,  // текущее условное положение автоматики, DPRO924 после этого ждет выставления положений
-  MAX_OPN        = 0x12,   // Максимально возможное открывание по энкодеру.
-  POS_MAX        = 0x18,   // Максимальное положение (открывания) по энкодеру
-  POS_MIN        = 0x19,   // Минимальное положение (закрывания) по энкодеру	
-  INF_P_OPN1     = 0x21, //	Частичное открывание1 
-  INF_P_OPN2     = 0x22, //	Частичное открывание2
-  INF_P_OPN3     = 0x23, //	Частичное открывание3
-  INF_SLOW_OPN   = 0x24, // Замедление в открывании
-  INF_SLOW_CLS   = 0x25, // Замедление в закрывании	
-  OPN_OFFSET     = 0x28, /* Задержка открывания  open offset */
-  CLS_OFFSET     = 0x29, /* Задержка закрывания  close offset */
-  OPN_DIS        = 0x2a, /* Основные параметры - Разгрузка открытия Open discharge */
-  CLS_DIS        = 0x2b, /* Основные параметры - Разгрузка закрытия Close discharge */
-  REV_TIME       = 0x31, /* Основные параметры - Длительность реверса (Brief inversion value) */
-  OPN_PWR        = 0x4A,    /* Основные параметры - Управление усилием - Усилие открывания */	  	  	  	  	  
-  CLS_PWR        = 0x4B,    /* Основные параметры - Управление усилием - Усилие закрывания */	  	  	  	  	  	  
-  SPEED_OPN      = 0x42,    /* Основные параметры - Настройка скорости - Скорость открывания */	  	  	  	  	  	  	  
-  SPEED_CLS      = 0x43,    /* Основные параметры - Настройка скорости - Скорость закрывания */	  
-  SPEED_SLW_OPN  = 0x45,    /* Основные параметры - Настройка скорости - Скорость замедленного открывания */	
-  SPEED_SLW_CLS  = 0x46,    /* Основные параметры - Настройка скорости - Скорость замедленного закрывания */	
-  OUT1           = 0x51,  /* Настройка выходов */	  
-  OUT2           = 0x52,  /* Настройка выходов */	  	  
-  LOCK_TIME      = 0x5A,  /* Настройка выходов - Время работы замка */
-  S_CUP_TIME     = 0x5C,  /* Настройка выходов - Время работы присоски Suction Cup Time*/	  
-  LAMP_TIME      = 0x5B,  /* Настройка выходов - Время работы лампы освещения courtesy light Time*/
-  COMM_SBS       = 0x61,  /* Настройка команд - Пошагово */	  
-  COMM_POPN      = 0x62,  /* Настройка команд - Открыть частично */	  	  
-  COMM_OPN       = 0x63,  /* Настройка команд - Открыть */	  	  	  
-  COMM_CLS       = 0x64,  /* Настройка команд - Закрыть */	  
-  COMM_STP       = 0x65,  /* Настройка команд - СТОП */		  
-  COMM_PHOTO     = 0x68,  /* Настройка команд - Фото */		  
-  COMM_PHOTO2    = 0x69,  /* Настройка команд - Фото2 */
-  COMM_PHOTO3    = 0x6A,  /* Настройка команд - Фото3 */
-  COMM_OPN_STP   = 0x6B,  /* Настройка команд - Стоп при открывании */	  
-  COMM_CLS_STP   = 0x6C,  /* Настройка команд - Стоп при закрывании */	 
-  IN1            = 0x71,  /* Настройка входов */
-  IN2            = 0x72,  /* Настройка входов */
-  IN3            = 0x73,  /* Настройка входов */
-  IN4            = 0x74,  /* Настройка входов */
-  COMM_LET_OPN   = 0x78,  /* Настройка команд - Помеха открыванию */	  	  	  
-  COMM_LET_CLS   = 0x79,  /* Настройка команд - Помеха закрыванию */	  	  	  	  
+  CUR_POS        = 0x11,  // bieżące umowne położenie automatyki, DPRO924 czeka potem na ustawienie położeń
+  MAX_OPN        = 0x12,   // Maksymalne możliwe otwarcie wg enkodera.
+  POS_MAX        = 0x18,   // Maksymalne położenie (otwarcia) wg enkodera
+  POS_MIN        = 0x19,   // Minimalne położenie (zamknięcia) wg enkodera	
+  INF_P_OPN1     = 0x21, //	Częściowe otwarcie1 
+  INF_P_OPN2     = 0x22, //	Częściowe otwarcie2
+  INF_P_OPN3     = 0x23, //	Częściowe otwarcie3
+  INF_SLOW_OPN   = 0x24, // Zwolnienie przy otwieraniu
+  INF_SLOW_CLS   = 0x25, // Zwolnienie przy zamykaniu	
+  OPN_OFFSET     = 0x28, /* Opóźnienie otwierania  open offset */
+  CLS_OFFSET     = 0x29, /* Opóźnienie zamykania  close offset */
+  OPN_DIS        = 0x2a, /* Parametry podstawowe - Odciążenie przy otwarciu Open discharge */
+  CLS_DIS        = 0x2b, /* Parametry podstawowe - Odciążenie przy zamknięciu Close discharge */
+  REV_TIME       = 0x31, /* Parametry podstawowe - Czas trwania rewersu (Brief inversion value) */
+  OPN_PWR        = 0x4A,    /* Parametry podstawowe - Regulacja siły - Siła otwierania */	  	  	  	  	  
+  CLS_PWR        = 0x4B,    /* Parametry podstawowe - Regulacja siły - Siła zamykania */	  	  	  	  	  	  
+  SPEED_OPN      = 0x42,    /* Parametry podstawowe - Ustawienie prędkości - Prędkość otwierania */	  	  	  	  	  	  	  
+  SPEED_CLS      = 0x43,    /* Parametry podstawowe - Ustawienie prędkości - Prędkość zamykania */	  
+  SPEED_SLW_OPN  = 0x45,    /* Parametry podstawowe - Ustawienie prędkości - Prędkość zwolnionego otwierania */	
+  SPEED_SLW_CLS  = 0x46,    /* Parametry podstawowe - Ustawienie prędkości - Prędkość zwolnionego zamykania */	
+  OUT1           = 0x51,  /* Konfiguracja wyjść */	  
+  OUT2           = 0x52,  /* Konfiguracja wyjść */	  	  
+  LOCK_TIME      = 0x5A,  /* Konfiguracja wyjść - Czas pracy zamka */
+  S_CUP_TIME     = 0x5C,  /* Konfiguracja wyjść - Czas pracy przyssawki Suction Cup Time*/	  
+  LAMP_TIME      = 0x5B,  /* Konfiguracja wyjść - Czas pracy lampy oświetleniowej courtesy light Time*/
+  COMM_SBS       = 0x61,  /* Konfiguracja komend - Krok po kroku */	  
+  COMM_POPN      = 0x62,  /* Konfiguracja komend - Otwórz częściowo */	  	  
+  COMM_OPN       = 0x63,  /* Konfiguracja komend - Otwórz */	  	  	  
+  COMM_CLS       = 0x64,  /* Konfiguracja komend - Zamknij */	  
+  COMM_STP       = 0x65,  /* Konfiguracja komend - STOP */		  
+  COMM_PHOTO     = 0x68,  /* Konfiguracja komend - Foto */		  
+  COMM_PHOTO2    = 0x69,  /* Konfiguracja komend - Foto2 */
+  COMM_PHOTO3    = 0x6A,  /* Konfiguracja komend - Foto3 */
+  COMM_OPN_STP   = 0x6B,  /* Konfiguracja komend - Stop przy otwieraniu */	  
+  COMM_CLS_STP   = 0x6C,  /* Konfiguracja komend - Stop przy zamykaniu */	 
+  IN1            = 0x71,  /* Konfiguracja wejść */
+  IN2            = 0x72,  /* Konfiguracja wejść */
+  IN3            = 0x73,  /* Konfiguracja wejść */
+  IN4            = 0x74,  /* Konfiguracja wejść */
+  COMM_LET_OPN   = 0x78,  /* Konfiguracja komend - Przeszkoda przy otwieraniu */	  	  	  
+  COMM_LET_CLS   = 0x79,  /* Konfiguracja komend - Przeszkoda przy zamykaniu */	  	  	  	  
 
-  AUTOCLS        = 0x80,    /* Основные параметры - Автозакрывание */
-  P_TIME         = 0x81,    /* Основные параметры - Время паузы */
-  PH_CLS_ON      = 0x84,    /* Основные параметры - Закрыть после Фото - Активно */	  
-  PH_CLS_VAR     = 0x86,    /* Основные параметры - Закрыть после Фото - Режим */	  	  
-  PH_CLS_TIME    = 0x85,    /* Основные параметры - Закрыть после Фото - Время ожидания */	  	  	  
-  ALW_CLS_ON     = 0x88,    /* Основные параметры - Всегда закрывать - Активно */	  	  
-  ALW_CLS_VAR    = 0x8A,    /* Основные параметры - Всегда закрывать - Режим */	  
-  ALW_CLS_TIME   = 0x89,    /* Основные параметры - Всегда закрывать - Время ожидания */	  	  	  
-  STAND_BY_ACT   = 0x8c,    /* Основные параметры - Режим ожидания - Активно  ON / OFF */
-  WAIT_TIME      = 0x8d,    /* Основные параметры - Режим ожидания - Время ожидания */
-  STAND_BY_MODE  = 0x8e,    /* Основные параметры - Режим ожидания - Режим -  safety = 0x00, bluebus=0x01, all=0x02*/
-  START_ON       = 0x90,    /* Основные параметры - Настройка пуска - Активно */		  	  
-  START_TIME     = 0x91,    /* Основные параметры - Настройка пуска - Время пуска */		  	  	  
-  SLOW_ON        = 0xA2,    /* Основные параметры - Замедление */	
-  DIS_VAL        = 0xA4,    /* Положение - Значение недопустимо disable value */
+  AUTOCLS        = 0x80,    /* Parametry podstawowe - Automatyczne zamykanie */
+  P_TIME         = 0x81,    /* Parametry podstawowe - Czas pauzy */
+  PH_CLS_ON      = 0x84,    /* Parametry podstawowe - Zamknij po Foto - Aktywne */	  
+  PH_CLS_VAR     = 0x86,    /* Parametry podstawowe - Zamknij po Foto - Tryb */	  	  
+  PH_CLS_TIME    = 0x85,    /* Parametry podstawowe - Zamknij po Foto - Czas oczekiwania */	  	  	  
+  ALW_CLS_ON     = 0x88,    /* Parametry podstawowe - Zawsze zamykaj - Aktywne */	  	  
+  ALW_CLS_VAR    = 0x8A,    /* Parametry podstawowe - Zawsze zamykaj - Tryb */	  
+  ALW_CLS_TIME   = 0x89,    /* Parametry podstawowe - Zawsze zamykaj - Czas oczekiwania */	  	  	  
+  STAND_BY_ACT   = 0x8c,    /* Parametry podstawowe - Tryb czuwania - Aktywne  ON / OFF */
+  WAIT_TIME      = 0x8d,    /* Parametry podstawowe - Tryb czuwania - Czas oczekiwania */
+  STAND_BY_MODE  = 0x8e,    /* Parametry podstawowe - Tryb czuwania - Tryb -  safety = 0x00, bluebus=0x01, all=0x02*/
+  START_ON       = 0x90,    /* Parametry podstawowe - Ustawienie rozruchu - Aktywne */		  	  
+  START_TIME     = 0x91,    /* Parametry podstawowe - Ustawienie rozruchu - Czas rozruchu */		  	  	  
+  SLOW_ON        = 0xA2,    /* Parametry podstawowe - Zwolnienie */	
+  DIS_VAL        = 0xA4,    /* Położenie - Wartość niedozwolona disable value */
 
-  BLINK_ON       = 0x94,    /* Основные параметры - Предмерцание - Активно */		  	  	  	  
-  BLINK_OPN_TIME = 0x95,    /* Основные параметры - Предмерцание - Время при открывании */		  	  	  	  	  
-  BLINK_CLS_TIME = 0x99,    /* Основные параметры - Предмерцание - Время при закрывании */
-  OP_BLOCK       = 0x9a,    /* Основные параметры - Блокирование мотора (Operator block)*/
-  KEY_LOCK       = 0x9c,    /* Основные параметры - Блокирование кнопок */
-  T_VAL          = 0xB1,    /*Alarm threshold value Порог до обслуживания в количестве маневров*/
-  P_COUNT        = 0xB2,    /* Partial count Выделенный счетчик*/
-  C_MAIN         = 0xB4,    /* Cancel maintenance Отмена обслуживания */
+  BLINK_ON       = 0x94,    /* Parametry podstawowe - Wstępne miganie - Aktywne */		  	  	  	  
+  BLINK_OPN_TIME = 0x95,    /* Parametry podstawowe - Wstępne miganie - Czas przy otwieraniu */		  	  	  	  	  
+  BLINK_CLS_TIME = 0x99,    /* Parametry podstawowe - Wstępne miganie - Czas przy zamykaniu */
+  OP_BLOCK       = 0x9a,    /* Parametry podstawowe - Blokada silnika (Operator block)*/
+  KEY_LOCK       = 0x9c,    /* Parametry podstawowe - Blokada przycisków */
+  T_VAL          = 0xB1,    /*Alarm threshold value Próg do serwisu w liczbie manewrów*/
+  P_COUNT        = 0xB2,    /* Partial count Licznik częściowy*/
+  C_MAIN         = 0xB4,    /* Cancel maintenance Anulowanie serwisu */
   DIAG_BB        = 0xD0,     /*   DIAGNOSTICS of bluebus devices */  
-  INF_IO         = 0xD1,    /*	состояние входов-выходов	*/
+  INF_IO         = 0xD1,    /*	stan wejść-wyjść	*/
   DIAG_PAR       = 0xD2,    /*  DIAGNOSTICS of other parameters   */
   
   
@@ -236,55 +236,55 @@ enum command_pkt  : uint8_t {
 
   
 
-  CUR_MAN = 0x02,  // Текущий Маневр
-  SUBMNU  = 0x04,  // Подменю
-  STA = 0xC0,   // статус в движении
-  MAIN_SET = 0x80,   // Основные параметры
-  RUN = 0x82,   // Команда для выполнения	  
+  CUR_MAN = 0x02,  // Bieżący manewr
+  SUBMNU  = 0x04,  // Podmenu
+  STA = 0xC0,   // status w ruchu
+  MAIN_SET = 0x80,   // Parametry podstawowe
+  RUN = 0x82,   // Komenda do wykonania	  
 
   };	
 
 	
-/* run cmd 11-й байт EVT пакетов */
+/* run cmd 11. bajt pakietów EVT */
 enum run_cmd  : uint8_t {
-  SET = 0xA9,  /* запрос на изменение параметров */
-  GET = 0x99,   /* запрос на получение параметров */
-  GET_SUPP_CMD = 0x89, /* получить поддерживаемые команды */
+  SET = 0xA9,  /* żądanie zmiany parametrów */
+  GET = 0x99,   /* żądanie odczytu parametrów */
+  GET_SUPP_CMD = 0x89, /* pobierz obsługiwane komendy */
   };
 
 
-/* Команда, которая должна быть выполнена.   
-11-й байт пакета CMD
-Используется в запросах и ответах */
+/* Komenda, która ma zostać wykonana.   
+11. bajt pakietu CMD
+Używana w zapytaniach i odpowiedziach */
 enum control_cmd : uint8_t { 
   SBS = 0x01,    /* Step by Step */
   STOP = 0x02,   /* Stop */
   OPEN = 0x03,   /* Open */
   CLOSE = 0x04,  /* Close */
-  P_OPN1 = 0x05, /* Partial opening 1 - частичное открывание, режим калитки */
+  P_OPN1 = 0x05, /* Partial opening 1 - częściowe otwarcie, tryb furtki */
   P_OPN2 = 0x06, /* Partial opening 2 */
   P_OPN3 = 0x07, /* Partial opening 3 */
-  RSP = 0x19, /* ответ интерфейса, подтверждающий получение команды  */
-  EVT = 0x29, /* ответ интерфейса, отправляющий запрошенную информацию */
+  RSP = 0x19, /* odpowiedź interfejsu potwierdzająca otrzymanie komendy  */
+  EVT = 0x29, /* odpowiedź interfejsu przesyłająca żądane informacje */
  
-  P_OPN4 = 0x0b, /* Partial opening 4 - Коллективно */
-  P_OPN5 = 0x0c, /* Partial opening 5 - Приоритет пошагово */
-  P_OPN6 = 0x0d, /* Partial opening 6 - Открыть и блокировать */
-  UNLK_OPN = 0x19, /* Разблокировать и открыть */
-  CLS_LOCK = 0x0E, /* Закрыть и блокировать */
-  UNLCK_CLS = 0x1A, /*  Разблокировать и Закрыть */
-  LOCK = 0x0F, /* Блокировать*/
-  UNLOCK = 0x10, /* Разблокировать */
-  LIGHT_TIMER = 0x11, /* Таймер освещения */
-  LIGHT_SW = 0x12, /* Освещение вкл/выкл */
-  HOST_SBS = 0x13, /* Ведущий SBS */
-  HOST_OPN = 0x14, /* Ведущий открыть */
-  HOST_CLS = 0x15, /* Ведущий закрыть */
-  SLAVE_SBS = 0x16, /*  Ведомый SBS */
-  SLAVE_OPN = 0x17, /* Ведомый открыть */
-  SLAVE_CLS = 0x18, /* Ведомый закрыть */
-  AUTO_ON = 0x1B, /* Автооткрывание активно */
-  AUTO_OFF = 0x1C, /* Автооткрывание неактивно	  */
+  P_OPN4 = 0x0b, /* Partial opening 4 - Zbiorczo */
+  P_OPN5 = 0x0c, /* Partial opening 5 - Priorytet krok po kroku */
+  P_OPN6 = 0x0d, /* Partial opening 6 - Otwórz i zablokuj */
+  UNLK_OPN = 0x19, /* Odblokuj i otwórz */
+  CLS_LOCK = 0x0E, /* Zamknij i zablokuj */
+  UNLCK_CLS = 0x1A, /*  Odblokuj i zamknij */
+  LOCK = 0x0F, /* Zablokuj*/
+  UNLOCK = 0x10, /* Odblokuj */
+  LIGHT_TIMER = 0x11, /* Timer oświetlenia */
+  LIGHT_SW = 0x12, /* Oświetlenie wł./wył. */
+  HOST_SBS = 0x13, /* Master SBS */
+  HOST_OPN = 0x14, /* Master otwórz */
+  HOST_CLS = 0x15, /* Master zamknij */
+  SLAVE_SBS = 0x16, /*  Slave SBS */
+  SLAVE_OPN = 0x17, /* Slave otwórz */
+  SLAVE_CLS = 0x18, /* Slave zamknij */
+  AUTO_ON = 0x1B, /* Automatyczne otwieranie aktywne */
+  AUTO_OFF = 0x1C, /* Automatyczne otwieranie nieaktywne	  */
   
 };
 	
@@ -293,26 +293,26 @@ enum control_cmd : uint8_t {
 	
 	
 	
-/* Информация для лучшего понимания состава пакетов в протоколе */
-// тело пакета запроса CMD
-// пакеты с размером тела 0x0c=12 байт 
+/* Informacje ułatwiające zrozumienie budowy pakietów w protokole */
+// treść pakietu zapytania CMD
+// pakiety z rozmiarem treści 0x0c=12 bajtów 
 	/*
 struct packet_cmd_body_t {
-  uint8_t byte_55;              // Заголовок, всегда 0x55
-  uint8_t pct_size1;                // размер тела пакета (без заголовка и CRC. Общее количество  байт минус три), для команд = 0x0c
-  uint8_t for_series;           // серия кому пакет ff = всем
-  uint8_t for_address;          // адрес кому пакет ff = всем
-  uint8_t from_series;           // серия от кого пакет
-  uint8_t from_address;          // адрес от кого пакет
-  uint8_t mes_type;           // тип сообщения, 1 = CMD, 8 = INF
-  uint8_t mes_size;              // количество байт дальше за вычетом двух байт CRC в конце, для команд = 5
-  uint8_t crc1;                // CRC1, XOR шести предыдущих байт
-  uint8_t cmd_mnu;                // Меню команды. cmd_mnu = 1 для команд управления
-  uint8_t setup_submnu;            // Подменю, в сочетании с группой команды определяет тип отправляемого сообщения
-  uint8_t control_cmd;            // Команда, которая должна быть выполнена
-  uint8_t offset;            //  Смещение для ответов. Влияет на запросы вроде списка поддерживаемых комманд
-  uint8_t crc2;            // crc2, XOR четырех предыдущих байт
-  uint8_t pct_size2;            // размер тела пакета (без заголовка и CRC. Общее количество  байт минус три), для команд = 0x0c
+  uint8_t byte_55;              // Nagłówek, zawsze 0x55
+  uint8_t pct_size1;                // rozmiar treści pakietu (bez nagłówka i CRC. Łączna liczba bajtów minus trzy), dla komend = 0x0c
+  uint8_t for_series;           // seria adresata pakietu ff = wszyscy
+  uint8_t for_address;          // adres adresata pakietu ff = wszyscy
+  uint8_t from_series;           // seria nadawcy pakietu
+  uint8_t from_address;          // adres nadawcy pakietu
+  uint8_t mes_type;           // typ komunikatu, 1 = CMD, 8 = INF
+  uint8_t mes_size;              // liczba dalszych bajtów pomniejszona o dwa bajty CRC na końcu, dla komend = 5
+  uint8_t crc1;                // CRC1, XOR sześciu poprzednich bajtów
+  uint8_t cmd_mnu;                // Menu komendy. cmd_mnu = 1 dla komend sterujących
+  uint8_t setup_submnu;            // Podmenu, w połączeniu z grupą komendy określa typ wysyłanego komunikatu
+  uint8_t control_cmd;            // Komenda, która ma zostać wykonana
+  uint8_t offset;            //  Przesunięcie dla odpowiedzi. Wpływa na zapytania typu lista obsługiwanych komend
+  uint8_t crc2;            // crc2, XOR czterech poprzednich bajtów
+  uint8_t pct_size2;            // rozmiar treści pakietu (bez nagłówka i CRC. Łączna liczba bajtów minus trzy), dla komend = 0x0c
 
 };
 
@@ -320,49 +320,49 @@ struct packet_cmd_body_t {
 
 
 
-// тело пакета ответа RSP
-// пакеты с размером тела 0x0e=14 байт 
+// treść pakietu odpowiedzi RSP
+// pakiety z rozmiarem treści 0x0e=14 bajtów 
 struct packet_rsp_body_t {
-  uint8_t byte_55;              // Заголовок, всегда 0x55
-  uint8_t pct_size1;                // размер тела пакета (без заголовка и CRC. Общее количество  байт минус три), >= 0x0e
-  uint8_t to_series;           // серия кому пакет ff = всем
-  uint8_t to_address;          // адрес кому пакет ff = всем
-  uint8_t from_series;           // серия от кого пакет
-  uint8_t from_address;          // адрес от кого пакет
-  uint8_t mes_type;           // тип сообщения, для этих пакетов всегда  8 = INF
-  uint8_t mes_size;              // количество байт дальше за вычетом двух байт CRC в конце, для команд = 5
-  uint8_t crc1;                // CRC1, XOR шести предыдущих байт
-  uint8_t cmd_mnu;                // Меню команды. cmd_mnu = 1 для команд управления
-  uint8_t sub_inf_cmd;            // Из какого подменю получил команду. Значение меньше на 0x80, чем первоначальное подменю
-  uint8_t sub_run_cmd;            // Какую команду получил. Значение больше на 0x80, чем полученная команда
-  uint8_t hb_data;             // данные, старший бит
-  uint8_t lb_data;            // данные, младший бит
-  uint8_t err;               // Ошибки
-  uint8_t crc2;            // crc2, XOR четырех предыдущих байт
-  uint8_t pct_size2;            // размер тела пакета (без заголовка и CRC. Общее количество  байт минус три), >= 0x0e
+  uint8_t byte_55;              // Nagłówek, zawsze 0x55
+  uint8_t pct_size1;                // rozmiar treści pakietu (bez nagłówka i CRC. Łączna liczba bajtów minus trzy), >= 0x0e
+  uint8_t to_series;           // seria adresata pakietu ff = wszyscy
+  uint8_t to_address;          // adres adresata pakietu ff = wszyscy
+  uint8_t from_series;           // seria nadawcy pakietu
+  uint8_t from_address;          // adres nadawcy pakietu
+  uint8_t mes_type;           // typ komunikatu, dla tych pakietów zawsze  8 = INF
+  uint8_t mes_size;              // liczba dalszych bajtów pomniejszona o dwa bajty CRC na końcu, dla komend = 5
+  uint8_t crc1;                // CRC1, XOR sześciu poprzednich bajtów
+  uint8_t cmd_mnu;                // Menu komendy. cmd_mnu = 1 dla komend sterujących
+  uint8_t sub_inf_cmd;            // Z którego podmenu otrzymano komendę. Wartość mniejsza o 0x80 niż pierwotne podmenu
+  uint8_t sub_run_cmd;            // Jaką komendę otrzymano. Wartość większa o 0x80 niż otrzymana komenda
+  uint8_t hb_data;             // dane, starszy bit
+  uint8_t lb_data;            // dane, młodszy bit
+  uint8_t err;               // Błędy
+  uint8_t crc2;            // crc2, XOR czterech poprzednich bajtów
+  uint8_t pct_size2;            // rozmiar treści pakietu (bez nagłówka i CRC. Łączna liczba bajtów minus trzy), >= 0x0e
 
 };
 	
- // тело пакета ответа с данными EVT
+ // treść pakietu odpowiedzi z danymi EVT
  
  struct packet_evt_body_t {
-  uint8_t byte_55;              // Заголовок, всегда 0x55
-  uint8_t pct_size1;                // размер тела пакета (без заголовка и CRC. Общее количество  байт минус три), >= 0x0e
-  uint8_t to_series;           // серия кому пакет ff = всем
-  uint8_t to_address;          // адрес кому пакет ff = всем
-  uint8_t from_series;           // серия от кого пакет
-  uint8_t from_address;          // адрес от кого пакет
-  uint8_t mes_type;           // тип сообщения, для этих пакетов всегда  8 = INF
-  uint8_t mes_size;              // количество байт дальше за вычетом двух байт CRC в конце, для команд = 5
-  uint8_t crc1;                // CRC1, XOR шести предыдущих байт
-  uint8_t whose;                // Чей пакет. Варианты: 00 - общий, 04 - контроллера привода, 0A - приемника OXI
-  uint8_t setup_submnu;            // Из какого подменю получил команду. Значение равно первоначальному подменю
-  uint8_t sub_run_cmd;            // На какую команду отвечаем. Значение меньше на 0x80, чем отправленная ранее команда
-  uint8_t next_data;            // Следующий блок данных
-  uint8_t err;               // Ошибки
-  uint8_t data_blk;            // Блок данных, может занимать несколько байт
-  uint8_t crc2;            // crc2, XOR всех предыдущих байт до девятого (Чей пакет)
-  uint8_t pct_size2;            // размер тела пакета (без заголовка и CRC. Общее количество  байт минус три), >= 0x0e
+  uint8_t byte_55;              // Nagłówek, zawsze 0x55
+  uint8_t pct_size1;                // rozmiar treści pakietu (bez nagłówka i CRC. Łączna liczba bajtów minus trzy), >= 0x0e
+  uint8_t to_series;           // seria adresata pakietu ff = wszyscy
+  uint8_t to_address;          // adres adresata pakietu ff = wszyscy
+  uint8_t from_series;           // seria nadawcy pakietu
+  uint8_t from_address;          // adres nadawcy pakietu
+  uint8_t mes_type;           // typ komunikatu, dla tych pakietów zawsze  8 = INF
+  uint8_t mes_size;              // liczba dalszych bajtów pomniejszona o dwa bajty CRC na końcu, dla komend = 5
+  uint8_t crc1;                // CRC1, XOR sześciu poprzednich bajtów
+  uint8_t whose;                // Czyj pakiet. Warianty: 00 - ogólny, 04 - sterownika napędu, 0A - odbiornika OXI
+  uint8_t setup_submnu;            // Z którego podmenu otrzymano komendę. Wartość równa pierwotnemu podmenu
+  uint8_t sub_run_cmd;            // Na jaką komendę odpowiadamy. Wartość mniejsza o 0x80 niż wcześniej wysłana komenda
+  uint8_t next_data;            // Następny blok danych
+  uint8_t err;               // Błędy
+  uint8_t data_blk;            // Blok danych, może zajmować kilka bajtów
+  uint8_t crc2;            // crc2, XOR wszystkich poprzednich bajtów do dziewiątego (Czyj pakiet)
+  uint8_t pct_size2;            // rozmiar treści pakietu (bez nagłówka i CRC. Łączna liczba bajtów minus trzy), >= 0x0e
 
 };
  
@@ -375,32 +375,32 @@ enum position_hook_type : uint8_t {
   STOP_DOWN = 0x02
  };
 
-// создаю класс, наследую членов классов Component и Cover
+// tworzę klasę, dziedziczę członków klas Component i Cover
 class NiceBusT4 : public Component, public Cover {
   public:
 	
-    // настройки привода
-    bool autocls_flag; // Автозакрывание - L1
-    bool photocls_flag; // Закрыть после фото - L2
-    bool alwayscls_flag; // Всегда закрывать - L3
-    bool init_ok = false; //  определение привода при включении
-    bool is_walky = false; // для walky отличается команда запроса положения
-    bool is_robus = false; // для robus не нужно переодически запрашивать позицию
-    bool is_ro = false; // для ro600 отличается пакет со статусом позиции и статусом движения
+    // ustawienia napędu
+    bool autocls_flag; // Automatyczne zamykanie - L1
+    bool photocls_flag; // Zamknij po foto - L2
+    bool alwayscls_flag; // Zawsze zamykaj - L3
+    bool init_ok = false; //  wykrywanie napędu przy włączeniu
+    bool is_walky = false; // dla walky inna jest komenda zapytania o położenie
+    bool is_robus = false; // dla robus nie trzeba okresowo odpytywać o pozycję
+    bool is_ro = false; // dla ro600 inny jest pakiet ze statusem pozycji i statusem ruchu
 		
     void setup() override;
     void loop() override;
-    void dump_config() override; // для вывода в лог информации об оборудовнии
+    void dump_config() override; // do wypisania w logu informacji o sprzęcie
 
     void send_raw_cmd(std::string data);
     void send_cmd(uint8_t data) {this->tx_buffer_.push(gen_control_cmd(data));}	
-    void send_inf_cmd(std::string to_addr, std::string whose, std::string command, std::string type_command,  std::string next_data, bool data_on, std::string data_command); // длинная команда
-    void set_mcu(std::string command, std::string data_command); // команда контроллеру мотора
+    void send_inf_cmd(std::string to_addr, std::string whose, std::string command, std::string type_command,  std::string next_data, bool data_on, std::string data_command); // długa komenda
+    void set_mcu(std::string command, std::string data_command); // komenda dla sterownika silnika
 		
 
     void set_class_gate(uint8_t class_gate) { class_gate_ = class_gate; }
     
- /*   void set_update_interval(uint32_t update_interval) {  // интервал получения статуса привода
+ /*   void set_update_interval(uint32_t update_interval) {  // interwał pobierania statusu napędu
       this->update_interval_ = update_interval;
     }*/
 
@@ -409,20 +409,20 @@ class NiceBusT4 : public Component, public Cover {
   protected:
     void control(const cover::CoverCall &call) override;
     void send_command_(const uint8_t *data, uint8_t len);
-    void request_position(void);  // Запрос условного текущего положения привода
-    void update_position(uint16_t newpos);  // Обновление текущего положения привода
+    void request_position(void);  // Zapytanie o umowne bieżące położenie napędu
+    void update_position(uint16_t newpos);  // Aktualizacja bieżącego położenia napędu
 
-    uint32_t last_position_time{0};  // Время последнего обновления текущего положения
+    uint32_t last_position_time{0};  // Czas ostatniej aktualizacji bieżącego położenia
     uint32_t update_interval_{500};
     uint32_t last_update_{0};
     uint32_t last_uart_byte_{0};
 
-    CoverOperation last_published_op;  // Последние опубликованные состояние и положение
+    CoverOperation last_published_op;  // Ostatnio opublikowany stan i położenie
     float last_published_pos{-1};
 
     void publish_state_if_changed(void);
 
-    uint8_t position_hook_type{IGNORE};  // Флаг и позиция установки заданного положения привода
+    uint8_t position_hook_type{IGNORE};  // Flaga i pozycja ustawienia zadanego położenia napędu
     uint16_t position_hook_value;
 
     uint8_t class_gate_ = 0x55; // 0x01 sliding, 0x02 sectional, 0x03 swing, 0x04 barrier, 0x05 up-and-over
@@ -432,29 +432,29 @@ class NiceBusT4 : public Component, public Cover {
     bool init_oxi_flag = false;	
 
 	
-    // переменные для uart
+    // zmienne dla uart
     uint8_t _uart_nr;
     uart_t* _uart = nullptr;
-    uint16_t _max_opn = 0;  // максимальная позиция энкодера или таймера
-    uint16_t _pos_opn = 2048;  // позиция открытия энкодера или таймера, не для всех приводов.
-    uint16_t _pos_cls = 0;  // позиция закрытия энкодера или таймера, не для всех приводов
-    uint16_t _pos_usl = 0;  // условная текущая позиция энкодера или таймера, не для всех приводов	
-    // настройки заголовка формируемого пакета
-    uint8_t addr_from[2] = {0x00, 0x66}; //от кого пакет, адрес bust4 шлюза
-    uint8_t addr_to[2]; // = 0x00ff;	 // кому пакет, адрес контроллера привода, которым управляем
-    uint8_t addr_oxi[2]; // = 0x000a;	 // адрес приемника
+    uint16_t _max_opn = 0;  // maksymalna pozycja enkodera lub timera
+    uint16_t _pos_opn = 2048;  // pozycja otwarcia enkodera lub timera, nie dla wszystkich napędów.
+    uint16_t _pos_cls = 0;  // pozycja zamknięcia enkodera lub timera, nie dla wszystkich napędów
+    uint16_t _pos_usl = 0;  // umowna bieżąca pozycja enkodera lub timera, nie dla wszystkich napędów	
+    // ustawienia nagłówka tworzonego pakietu
+    uint8_t addr_from[2] = {0x00, 0x66}; //nadawca pakietu, adres bramki bust4
+    uint8_t addr_to[2]; // = 0x00ff;	 // adresat pakietu, adres sterownika napędu, którym sterujemy
+    uint8_t addr_oxi[2]; // = 0x000a;	 // adres odbiornika
 
-    std::vector<uint8_t> raw_cmd_prepare (std::string data);             // подготовка введенных пользователем данных для возможности отправки	
+    std::vector<uint8_t> raw_cmd_prepare (std::string data);             // przygotowanie danych wprowadzonych przez użytkownika do wysłania	
 	
-    // генерация inf команд
-    std::vector<uint8_t> gen_inf_cmd(const uint8_t to_addr1, const uint8_t to_addr2, const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd, const uint8_t next_data, const std::vector<uint8_t> &data, size_t len);	 // все поля
-    std::vector<uint8_t> gen_inf_cmd(const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd) {return gen_inf_cmd(this->addr_to[0], this->addr_to[1], whose, inf_cmd, run_cmd, 0x00, {0x00}, 0 );} // для команд без данных
+    // generowanie komend inf
+    std::vector<uint8_t> gen_inf_cmd(const uint8_t to_addr1, const uint8_t to_addr2, const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd, const uint8_t next_data, const std::vector<uint8_t> &data, size_t len);	 // wszystkie pola
+    std::vector<uint8_t> gen_inf_cmd(const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd) {return gen_inf_cmd(this->addr_to[0], this->addr_to[1], whose, inf_cmd, run_cmd, 0x00, {0x00}, 0 );} // dla komend bez danych
     std::vector<uint8_t> gen_inf_cmd(const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd, const uint8_t next_data, std::vector<uint8_t> data){
-	    return gen_inf_cmd(this->addr_to[0], this->addr_to[1], whose, inf_cmd, run_cmd, next_data, data, data.size());} // для команд c данными
+	    return gen_inf_cmd(this->addr_to[0], this->addr_to[1], whose, inf_cmd, run_cmd, next_data, data, data.size());} // dla komend z danymi
     std::vector<uint8_t> gen_inf_cmd(const uint8_t to_addr1, const uint8_t to_addr2, const uint8_t whose, const uint8_t inf_cmd, const uint8_t run_cmd, const uint8_t next_data){
-	    return gen_inf_cmd(to_addr1, to_addr2, whose, inf_cmd, run_cmd, next_data, {0x00}, 0);} // для команд с адресом и без данных 	
+	    return gen_inf_cmd(to_addr1, to_addr2, whose, inf_cmd, run_cmd, next_data, {0x00}, 0);} // dla komend z adresem i bez danych 	
     	    
-    // генерация cmd команд
+    // generowanie komend cmd
     std::vector<uint8_t> gen_control_cmd(const uint8_t control_cmd);	    	
 	
     void init_device (const uint8_t addr1, const uint8_t addr2, const uint8_t device );
@@ -462,17 +462,17 @@ class NiceBusT4 : public Component, public Cover {
     void send_array_cmd (const uint8_t *data, size_t len);
 
 
-    void parse_status_packet (const std::vector<uint8_t> &data); // разбираем пакет статуса
+    void parse_status_packet (const std::vector<uint8_t> &data); // parsujemy pakiet statusu
     
-    void handle_char_(uint8_t c);                                         // обработчик полученного байта
-    void handle_datapoint_(const uint8_t *buffer, size_t len);          // обработчик полученных данных
-    bool validate_message_();                                         // функция проверки полученного сообщения
+    void handle_char_(uint8_t c);                                         // obsługa odebranego bajtu
+    void handle_datapoint_(const uint8_t *buffer, size_t len);          // obsługa odebranych danych
+    bool validate_message_();                                         // funkcja weryfikacji odebranego komunikatu
 
-    std::vector<uint8_t> rx_message_;                          // здесь побайтно накапливается принятое сообщение
-    std::queue<std::vector<uint8_t>> tx_buffer_;             // очередь команд для отправки	
-    bool ready_to_tx_{true};	                           // флаг возможности отправлять команды
+    std::vector<uint8_t> rx_message_;                          // tu bajt po bajcie gromadzony jest odebrany komunikat
+    std::queue<std::vector<uint8_t>> tx_buffer_;             // kolejka komend do wysłania	
+    bool ready_to_tx_{true};	                           // flaga gotowości do wysyłania komend
 	
-    std::vector<uint8_t> manufacturer_ = {0x55, 0x55};  // при инициализации неизвестный производитель
+    std::vector<uint8_t> manufacturer_ = {0x55, 0x55};  // przy inicjalizacji nieznany producent
     std::vector<uint8_t> product_;
     std::vector<uint8_t> hardware_;
     std::vector<uint8_t> firmware_;
@@ -482,7 +482,7 @@ class NiceBusT4 : public Component, public Cover {
     std::vector<uint8_t> oxi_firmware;
     std::vector<uint8_t> oxi_description;	
 
-}; //класс
+}; //klasa
 
 } // namespace bus_t4
 } // namespace esphome
